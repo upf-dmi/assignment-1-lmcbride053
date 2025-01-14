@@ -27,6 +27,11 @@ The original dataset comes from [here](https://archive.ics.uci.edu/ml/datasets/H
 ### Reading in the Data
 ```{r}
 hdisease <- read.table("./data/heart_disease_dataset.csv", header=T)
+```
+
+### Transforming the data to ensure categorical and numerical variables are treated as such
+
+```{r}
 hdisease1 <- hdisease %>%
   mutate(
     sex = ifelse(sex == 1, "male", "female"),
@@ -39,15 +44,24 @@ hdisease1 <- hdisease %>%
     num = ifelse(num == 0, "negative diagnosis", "positive diagnosis")
   )
 hdisease1[hdisease1 == "?"] <- NA
+```
 
+### Summary of the data
+```{r}
 summary(hdisease1)
-
+```
+### Age distribution
+```{r}
 ggplot(hdisease1, aes(x=age)) +
   geom_histogram()
+```
 
+```{r}
 plot_missing(hdisease1)
+```
 
-
+### Distributions of numerical variables
+```{r}
 numeric_vars <- hdisease1 %>%
   select_if(is.numeric) %>%
   select(!patient_id)
@@ -59,8 +73,10 @@ numeric_vars %>%
   geom_histogram(bins = 10, fill = "blue", color = "black", alpha = 0.7) +
   facet_wrap(~ variable, scales = "free_x") +
   theme_minimal() +
-  labs(title = "Histograms of Numericql Variables", x = "Value", y = "Frequency")
+  labs(title = "Histograms of Numerical Variables", x = "Value", y = "Frequency")
+```
 
+```{r}
 numeric_vars %>%
   gather(key = "variable", value = "value") %>%
   ggplot(aes(x = value)) +
@@ -68,10 +84,12 @@ numeric_vars %>%
   facet_wrap(~ variable, scales = "free_x") +
   theme_minimal() +
   labs(title = "Histograms of Numerical Variables", x = "Value", y = "Frequency")
+```
 
-
+### Distributions of categorical variables
+```{r}
 # Select categorical variables
-categorical_logical_vars <- hdisease1 %>%
+categorical_vars <- hdisease1 %>%
   select_if(function(col) is.character(col) || is.logical(col))
 
 # Convert the categorical variables to long format for plotting
@@ -90,8 +108,6 @@ categorical_vars_long %>%
   gather(key = "variable", value = "value") %>%
   count(variable, value) %>%
   arrange(variable, desc(n))
-
-
 ```
 
 
