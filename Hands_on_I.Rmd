@@ -13,6 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggplot2)
 library(stats)
+library(DataExplorer)
 ```
 
 
@@ -41,11 +42,56 @@ hdisease1[hdisease1 == "?"] <- NA
 
 summary(hdisease1)
 
-ggplot(hdisease1, aes(x = value)) +
+ggplot(hdisease1, aes(x=age)) +
+  geom_histogram()
+
+plot_missing(hdisease1)
+
+
+numeric_vars <- hdisease1 %>%
+  select_if(is.numeric) %>%
+  select(!patient_id)
+
+# Plot histograms for selected variables
+numeric_vars %>%
+  gather(key = "variable", value = "value") %>%
+  ggplot(aes(x = value)) +
   geom_histogram(bins = 10, fill = "blue", color = "black", alpha = 0.7) +
   facet_wrap(~ variable, scales = "free_x") +
   theme_minimal() +
-  labs(title = "Histograms of Variables", x = "Value", y = "Frequency")
+  labs(title = "Histograms of Numericql Variables", x = "Value", y = "Frequency")
+
+numeric_vars %>%
+  gather(key = "variable", value = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free_x") +
+  theme_minimal() +
+  labs(title = "Histograms of Numerical Variables", x = "Value", y = "Frequency")
+
+
+# Select categorical variables
+categorical_logical_vars <- hdisease1 %>%
+  select_if(function(col) is.character(col) || is.logical(col))
+
+# Convert the categorical variables to long format for plotting
+categorical_vars_long <- categorical_vars %>%
+  gather(key = "variable", value = "value")
+
+# Plot bar charts for categorical variables
+categorical_vars_long %>%
+  ggplot(aes(x = value)) +
+  geom_bar(fill = "blue", color = "black", alpha = 0.7) +
+  facet_wrap(~ variable, scales = "free_x") +
+  theme_minimal() +
+  labs(title = "Bar Charts of Categorical Variables", x = "Category", y = "Count")
+
+categorical_vars_long %>%
+  gather(key = "variable", value = "value") %>%
+  count(variable, value) %>%
+  arrange(variable, desc(n))
+
+
 ```
 
 
