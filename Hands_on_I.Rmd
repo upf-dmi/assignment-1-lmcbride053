@@ -14,6 +14,7 @@ library(tidyverse)
 library(ggplot2)
 library(stats)
 library(DataExplorer)
+library(outliers)
 ```
 
 
@@ -44,6 +45,19 @@ hdisease1 <- hdisease %>%
     num = ifelse(num == 0, "negative diagnosis", "positive diagnosis")
   )
 hdisease1[hdisease1 == "?"] <- NA
+
+is_numeric <- sapply(hdisease1, is.numeric)
+min_percentile_thresholds <- numeric(sum(is_numeric))
+max_percentile_thresholds <- numeric(sum(is_numeric))
+# Loop through each numeric column to detect and replace outliers
+for (i in which(is_numeric)) {
+  column_data <- hdisease1[[i]]
+  min_percentile_thresholds[i] <- quantile(hdisease1[[i]], 0.05, na.rm = TRUE)  # 5th percentile
+  max_percentile_thresholds[i] <- quantile(hdisease1[[i]], 0.95, na.rm = TRUE)  # 95th percentile
+  hdisease1[[i]][column_data < min_percentile_thresholds[i]] <- min_percentile_thresholds[i] 
+  hdisease1[[i]][column_data > max_percentile_thresholds[i]] <- max_percentile_thresholds[i]
+}
+
 ```
 
 ### Summary of the data
@@ -83,7 +97,7 @@ numeric_vars %>%
   geom_boxplot() +
   facet_wrap(~ variable, scales = "free_x") +
   theme_minimal() +
-  labs(title = "Histograms of Numerical Variables", x = "Value", y = "Frequency")
+  labs(title = "Boxplots of Numerical Variables", x = "Value", y = "Frequency")
 ```
 
 ### Distributions of categorical variables
