@@ -215,6 +215,7 @@ heatmap(cytokine_matrix,
         labCol = rep("", ncol(cytokine_matrix)),
         ColSideColors = group_colors[annotation_row],  # Add the group colors as side annotation
         margins = c(8, 10))  # Adjust margins to fit labels
+#test
 ```
 
 ## Improve figure 2 of the publication
