@@ -16,6 +16,8 @@ library(stats)
 library(DataExplorer)
 library(outliers)
 library(readxl)
+library(ComplexHeatmap)
+library(circlize)
 ```
 
 
@@ -50,7 +52,8 @@ hdisease1[hdisease1 == "?"] <- NA
 is_numeric <- sapply(hdisease1, is.numeric)
 min_percentile_thresholds <- numeric(sum(is_numeric))
 max_percentile_thresholds <- numeric(sum(is_numeric))
-# Loop through each numeric column to detect and replace outliers
+
+# Replace outliers
 for (i in which(is_numeric)) {
   column_data <- hdisease1[[i]]
   min_percentile_thresholds[i] <- quantile(hdisease1[[i]], 0.05, na.rm = TRUE)  # 5th percentile
@@ -143,10 +146,10 @@ Table1 <- read_excel("~/Documents/Table1.xlsx", skip = 1)
 Table1$Group = NA
 Table1 <- Table1 %>%
   mutate(Group = case_when(
-    `ARDS Diagnosis` == "Yes" & `Use of AMV` == "Yes" & (`Use of NIV` == "Yes" | `Use of NIV` == "No") ~ 4,
-    `ARDS Diagnosis` == "Yes" & `Use of AMV`== "No" & `Use of NIV` == "Yes" ~ 3,
-    `ARDS Diagnosis` == "No" & (`Use of AMV` == "Yes" | `Use of AMV` == "No") & (`Use of NIV` == "Yes" | `Use of NIV` == "No") ~ 2,
-    `ARDS Diagnosis` == "No" & `Use of AMV`== "No" & `Use of NIV` == "No" ~ 1
+    `ARDS Diagnosis` == "No" & `Use of AMV`== "No" & `Use of NIV` == "No" ~ "G1",
+    `ARDS Diagnosis` == "No" & (`Use of AMV` == "Yes" | `Use of AMV` == "No") & (`Use of NIV` == "Yes" | `Use of NIV` == "No") ~ "G2",
+    `ARDS Diagnosis` == "Yes" & `Use of AMV`== "No" & `Use of NIV` == "Yes" ~ "G3",
+    `ARDS Diagnosis` == "Yes" & `Use of AMV` == "Yes" & (`Use of NIV` == "Yes" | `Use of NIV` == "No") ~ "G4"
   ))
 Table1 <- Table1 %>%
   distinct()
@@ -165,58 +168,101 @@ Table1 <- Table1 %>%
 but instead of representing the clusters in the annotation, represent the groups (G1 to G4)
 
 ```{r}
-library(pheatmap)
 
 Table2 <- read_excel("~/Documents/Table2.xlsx", skip = 1)
 names(Table2)[1] <- "ID"
 Table2 <- Table2 %>%
   fill(ID, .direction = "down")
-Table2 <- Table2 %>%
-  left_join(Table1 %>% select(ID, Group), by = "ID")
 Table2_clean <- Table2 %>%
-  filter_all(all_vars(. != "NI"))
+  filter(across(3:14, ~ . != "NI"))
+
+Table2_clean <- Table2_clean %>%
+  select(1, 3:14)
+Table2_clean[, 2:13] <- lapply(Table2_clean[, 2:13], as.numeric)
+
+Table2_clean <- Table2_clean %>% 
+  group_by(ID) %>%
+    summarise(
+      across(1:12, ~ mean(.x, na.rm = TRUE))
+    )
+Table2_clean <- Table2_clean %>%
+  left_join(Table1 %>% select(ID, Group), by = "ID")
+
+Table2_clean <- Table2_clean %>%
+  filter(!is.na(Group))
+
 cytokine_data <- Table2_clean %>%
   select(c("Group", "IL-1β", "IL-6", "IL-10", "IFN-ɑ", "TNF-ɑ", "IL-8", "G-CSF", "IFN-γ", 
            "CCL3", "CXCL10", "CCL2", "IL-38"))
+cytokine_data <- na.omit(cytokine_data)
 
 cytokine_data$Group <- as.factor(cytokine_data$Group)
 
-# Convert cytokine columns to numeric (handles non-numeric values as NA)
-cytokine_data[ , 2:ncol(cytokine_data)] <- lapply(cytokine_data[ , 2:ncol(cytokine_data)], as.numeric)
 
-# Remove rows with NA values (optional, based on your data)
-cytokine_data <- na.omit(cytokine_data)
+# Prepare the matrix
+cytokine_matrix <- cytokine_data %>%
+  select(-Group) %>%
+  mutate(across(everything(), as.numeric)) %>%  # Ensure all columns are numeric
+  as.matrix()
+scale_to_percent <- function(x) {
+  (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE)) * 100
+}
 
-# Extract the Group column as the annotation
-annotation_row <- data.frame(Group = cytokine_data$Group)
-rownames(annotation_row) <- rownames(cytokine_data)  # Ensure rownames match cytokine data
+# Scale each cytokine (row) to percentage
+scaled_matrix <- t(apply(cytokine_matrix, 2, scale_to_percent))
+colnames(scaled_matrix) <- cytokine_data$Group
 
-# Remove the Group column from the cytokine matrix
-cytokine_matrix <- as.matrix(cytokine_data[, -1])
-rownames(cytokine_matrix) <- rownames(cytokine_data)
 
-# Scale the data row-wise for relative expression
-cytokine_matrix <- scale(t(cytokine_matrix))
+# Color mapping
+col_fun <- colorRamp2(c(0, 50, 100), c("#fcdfa4", "#FF7F50", "#8B0000"))
 
-# Define colors for the groups
-unique_groups <- levels(annotation_row$Group)  # Ensure proper levels of the Group factor
-group_colors <- rainbow(length(unique_groups))  # Generate distinct colors for groups
-names(group_colors) <- unique_groups
+# Group annotation colors
+column_ha <- HeatmapAnnotation(
+    Group = cytokine_data$Group,
+    col = list(Group = c(
+        "G1" = "#FF9999",  # Red
+        "G2" = "#90EE90",  # Green
+        "G3" = "#87CEEB",  # Blue
+        "G4" = "pink"      # Pink
+    ))
+)
 
-# Create annotation_colors list
-annotation_colors <- list(Group = group_colors)
-annotation_row <- t(annotation_row)
-# Create the heatmap
-heatmap(cytokine_matrix,
-        scale = "none",  # Data is already scaled
-        col = colorRampPalette(c("white", "orange", "brown"))(50),  # Color gradient
-        main = "Cytokine Heatmap with Group Annotations",  # Title
-        cexRow = 0.6, # Adjust cytokine label font size
-        labCol = rep("", ncol(cytokine_matrix)),
-        ColSideColors = group_colors[annotation_row],  # Add the group colors as side annotation
-        margins = c(8, 10))  # Adjust margins to fit labels
-#test
+# Heatmap
+heatmap <- Heatmap(
+    scaled_matrix,
+    name = "Relative expression",
+    
+    # Color gradient
+    col = col_fun,
+    
+    # Clustering
+    cluster_rows = hclust(dist(scaled_matrix, method = "manhattan")),
+    cluster_columns = hclust(dist(t(scaled_matrix), method = "manhattan")),
+    
+    # Row and column settings
+    row_names_side = "right",
+    row_dend_side = "left",
+    column_title = "Patients",
+    column_title_side = "bottom",
+    top_annotation = column_ha,
+    
+    # Legend
+    heatmap_legend_param = list(
+        title = "Relative expression",
+        at = c(0, 50, 100),
+        labels = c("0.00", "50.0%", "100.0%"),
+        color_bar = "discrete"
+    ),
+    
+    # Style adjustments
+    row_names_gp = gpar(fontsize = 10, fontface = "bold"),  # Larger font for rows
+    show_column_names = FALSE  # Hide column names to reduce clutter
+)
+
+# Draw the heatmap
+draw(heatmap, heatmap_legend_side = "left", padding = unit(c(2, 2, 2, 2), "mm"))
 ```
+
 
 ## Improve figure 2 of the publication
 Add a second annotation with information of death and a third one with information of gender
