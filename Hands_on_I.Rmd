@@ -11,6 +11,8 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(cowplot)
+library(viridis)
 library(ggplot2)
 library(stats)
 library(DataExplorer)
@@ -18,6 +20,15 @@ library(outliers)
 library(readxl)
 library(ComplexHeatmap)
 library(circlize)
+library(ggplotify)
+library(gridExtra)
+library(grid)
+library(caret)
+library(RColorBrewer)
+library(ggfortify)
+library(cluster)
+library(ggpubr)
+library(survival)
 ```
 
 
@@ -28,14 +39,13 @@ The original dataset comes from [here](https://archive.ics.uci.edu/ml/datasets/H
 
 ## Perform an EDA on the dataset
 
-### Reading in the Data
+### Data preparation
+
 ```{r}
+# Reading in the Data
 hdisease <- read.table("./data/heart_disease_dataset.csv", header=T)
-```
 
-### Transforming the data to ensure categorical and numerical variables are treated as such
-
-```{r}
+# Transforming the data to ensure categorical and numerical variables are treated as such 
 hdisease1 <- hdisease %>%
   mutate(
     sex = ifelse(sex == 1, "male", "female"),
@@ -47,64 +57,125 @@ hdisease1 <- hdisease %>%
     thal = recode(thal, `3` = "normal", `6` = "fixed defect", `7` = "reversible defect"),
     num = ifelse(num == 0, "negative diagnosis", "positive diagnosis")
   )
+
+hdisease1$patient_id <- as.factor(hdisease1$patient_id)
+
+# Rename columns for better readability
+colnames(hdisease1) <- c("age", "sex", "chest_pain_type", "resting_bp", "cholesterol", "blood_sugar", "rest_ecg", "max_heart_rate", "exercise_induced_angina",
+                         "peak", "slope", "num_major_vessels", "thalassemia", "diagnosis", "id")
+
+# Changing missing values from "?" to "NA"
 hdisease1[hdisease1 == "?"] <- NA
 
-is_numeric <- sapply(hdisease1, is.numeric)
-min_percentile_thresholds <- numeric(sum(is_numeric))
-max_percentile_thresholds <- numeric(sum(is_numeric))
-
 # Replace outliers
-for (i in which(is_numeric)) {
-  column_data <- hdisease1[[i]]
-  min_percentile_thresholds[i] <- quantile(hdisease1[[i]], 0.05, na.rm = TRUE)  # 5th percentile
-  max_percentile_thresholds[i] <- quantile(hdisease1[[i]], 0.95, na.rm = TRUE)  # 95th percentile
-  hdisease1[[i]][column_data < min_percentile_thresholds[i]] <- min_percentile_thresholds[i] 
-  hdisease1[[i]][column_data > max_percentile_thresholds[i]] <- max_percentile_thresholds[i]
+remove_outliers_column <- function(x) {
+  iqr_val <- IQR(x, na.rm = TRUE)
+  lower_bound <- quantile(x, 0.25, na.rm = TRUE) - 1.5 * iqr_val
+  upper_bound <- quantile(x, 0.75, na.rm = TRUE) + 1.5 * iqr_val
+  x[x < lower_bound] <- lower_bound
+  x[x > upper_bound] <- upper_bound
+  return(x)
 }
 
+columns_to_filter <- c("age", "cholesterol", "max_heart_rate", "resting_bp", "peak")
+
+for (col in columns_to_filter) {
+  hdisease1[[col]] <- remove_outliers_column(hdisease1[[col]])
+}
 ```
 
-### Summary of the data
-```{r}
-summary(hdisease1)
-```
-### Age distribution
-```{r}
-ggplot(hdisease1, aes(x=age)) +
-  geom_histogram()
-```
-
-```{r}
-plot_missing(hdisease1)
-```
-
-### Distributions of numerical variables
+### Numerical variables
+#### Create boxplots
 ```{r}
 numeric_vars <- hdisease1 %>%
-  select_if(is.numeric) %>%
-  select(!patient_id)
+  select(where(is.numeric))
 
-# Plot histograms for selected variables
 numeric_vars %>%
   gather(key = "variable", value = "value") %>%
-  ggplot(aes(x = value)) +
-  geom_histogram(bins = 10, fill = "blue", color = "black", alpha = 0.7) +
-  facet_wrap(~ variable, scales = "free_x") +
-  theme_minimal() +
-  labs(title = "Histograms of Numerical Variables", x = "Value", y = "Frequency")
-```
-
-```{r}
-numeric_vars %>%
-  gather(key = "variable", value = "value") %>%
-  ggplot(aes(x = value)) +
+  ggplot(aes(y = value)) +
   geom_boxplot() +
-  facet_wrap(~ variable, scales = "free_x") +
+  facet_wrap(~ variable, scales = "free_y") +
   theme_minimal() +
   labs(title = "Boxplots of Numerical Variables", x = "Value", y = "Frequency")
 ```
+#### Density plots
+```{r}
+# Create densityplots.
+plot_Age <- ggplot(data = hdisease1, aes( x = age)) + 
+  geom_histogram(aes(y = ..density..), fill = 'deepskyblue1', color = 'black' ,binwidth = 5) +
+  geom_density(fill = '#F0FFFF', alpha = 0.5)
+plot_Cholestherol <- ggplot(data = hdisease1, aes( x = cholesterol)) + 
+  geom_histogram(aes(y = ..density..), fill = 'deepskyblue1', color = 'black' ,binwidth = 5) +
+  geom_density(fill = '#F0FFFF', alpha = 0.5) 
+plot_MaxHeartRate <- ggplot(data = hdisease1, aes( x = max_heart_rate)) + 
+  geom_histogram(aes(y = ..density..), fill = 'deepskyblue1', color = 'black' , binwidth = 5) +
+  geom_density(fill = '#F0FFFF', alpha = 0.5) 
+plot_RestingBloodPressure <- ggplot(data = hdisease1, aes( x = resting_bp)) + 
+  geom_histogram(aes(y = ..density..), fill = 'deepskyblue1', color = 'black' , binwidth = 5) +
+  geom_density(fill = '#F0FFFF', alpha = 0.5) 
+plot_Peak <- ggplot(data = hdisease1, aes( x = peak)) + 
+  geom_histogram(aes(y = ..density..), fill = 'deepskyblue1', color = 'black', binwidth = 0.1) +
+  geom_density(fill = '#F0FFFF', alpha = 0.5) 
 
-### Distributions of categorical variables
+plot_grid(plot_Age,plot_Cholestherol,plot_MaxHeartRate,plot_RestingBloodPressure,plot_Peak, ncol = 3)
+```
+#### Q-Q Plots
+```{r fig.width=10}
+# Create Q-Q plots.
+qq_plot_Age <- ggplot(data = hdisease1, aes(sample = age)) +
+  stat_qq(distribution = qnorm, color = 'deepskyblue1') +
+  stat_qq_line(distribution = qnorm, color = 'red') +
+  ggtitle("Q-Q Plot for Age")
+
+qq_plot_Cholesterol <- ggplot(data = hdisease1, aes(sample = cholesterol)) +
+  stat_qq(distribution = qnorm, color = 'deepskyblue1') +
+  stat_qq_line(distribution = qnorm, color = 'red') +
+  ggtitle("Q-Q Plot for Cholesterol")
+
+qq_plot_MaxHeartRate <- ggplot(data = hdisease1, aes(sample = max_heart_rate)) +
+  stat_qq(distribution = qnorm, color = 'deepskyblue1') +
+  stat_qq_line(distribution = qnorm, color = 'red') +
+  ggtitle("Q-Q Plot for MaxHeartRate")
+
+qq_plot_RestingBloodPressure <- ggplot(data = hdisease1, aes(sample = resting_bp)) +
+  stat_qq(distribution = qnorm, color = 'deepskyblue1') +
+  stat_qq_line(distribution = qnorm, color = 'red') +
+  ggtitle("Q-Q Plot for RestingBloodPressure")
+
+qq_plot_Peak <- ggplot(data = hdisease1, aes(sample = peak)) +
+  stat_qq(distribution = qnorm, color = 'deepskyblue1') +
+  stat_qq_line(distribution = qnorm, color = 'red') +
+  ggtitle("Q-Q Plot for Peak")
+
+grid.arrange(qq_plot_Age, qq_plot_Cholesterol, qq_plot_MaxHeartRate, 
+             qq_plot_RestingBloodPressure, qq_plot_Peak, nrow = 2)
+```
+#### Normality tests
+```{r}
+# alpha 0.05
+# Normality test for Age
+shapiro_test_Age <- shapiro.test(hdisease1$age)
+cat("Shapiro-Wilk test for Age:\n", "W =", shapiro_test_Age$statistic, ", p-value =", shapiro_test_Age$p.value, "\n\n") 
+
+# Normality test for Cholestherol
+shapiro_test_Cholestherol <- shapiro.test(hdisease1$cholesterol)
+cat("Shapiro-Wilk test for Cholestherol:\n", "W =", shapiro_test_Cholestherol$statistic, ", p-value =", shapiro_test_Cholestherol$p.value, "\n\n")
+
+# Normality test for Max Heart Rate
+shapiro_test_MaxHeartRate <- shapiro.test(hdisease1$max_heart_rate)
+cat("Shapiro-Wilk test for Max heart rate:\n", "W =", shapiro_test_MaxHeartRate$statistic, ", p-value =", shapiro_test_MaxHeartRate$p.value, "\n\n")
+
+# Normality test for RestingBloodPressure
+shapiro_test_RestingBloodPressure <- shapiro.test(hdisease1$resting_bp)
+cat("Shapiro-Wilk test for Resting BP:\n", "W =", shapiro_test_RestingBloodPressure$statistic, ", p-value =", shapiro_test_RestingBloodPressure$p.value, "\n\n")
+
+# Normality test for Peak
+shapiro_test_Peak <- shapiro.test(hdisease1$peak)
+cat("Shapiro-Wilk test for Peak:\n", "W =", shapiro_test_Peak$statistic, ", p-value =", shapiro_test_Peak$p.value, "\n\n")
+```
+They all follow a normal distribution (p<0.05)
+
+### Categorical variables
 ```{r}
 # Select categorical variables
 categorical_vars <- hdisease1 %>%
@@ -113,26 +184,127 @@ categorical_vars <- hdisease1 %>%
 # Convert the categorical variables to long format for plotting
 categorical_vars_long <- categorical_vars %>%
   gather(key = "variable", value = "value")
+```
+#### Barplots
+```{r}
+# Function to create barplots for categorical variables
+create_barplot <- function(data, var, fill_colors = NULL, angle = 45) {
+  p <- ggplot(data, aes_string(x = var, fill = var)) +
+    geom_bar() +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = angle, hjust = 1),
+      legend.position = "none",
+      plot.margin=margin(t=5, b=5, r=5, l=5)
+    ) +
+    coord_flip()
+  
+  if (!is.null(fill_colors)) {
+    p <- p + scale_fill_manual(values = fill_colors)
+  } else {
+    p <- p + scale_fill_brewer(palette = "Set2")
+  }
+  
+  return(p)
+}
+# Create plots
+plot_sex <- create_barplot(hdisease1, "sex", c("#FFB6C1", "#87CEFA"))
+plot_chest_pain <- create_barplot(hdisease1, "chest_pain_type")
+plot_fasting_blood_sugar <- create_barplot(hdisease1, "blood_sugar")
+plot_resting_ec <- create_barplot(hdisease1, "rest_ecg")
+plot_exercise_induced_angina <- create_barplot(hdisease1, "exercise_induced_angina", c("#CD0000", "#00CD00"))
+plot_slope <- create_barplot(hdisease1, "slope", c("#EE5C42", "#00E5EE", "#00EE76"))
+plot_major_vessels <- create_barplot(hdisease1, "num_major_vessels") 
+plot_thalassemia <- create_barplot(hdisease1, "thalassemia", NULL)
+plot_diagnosis <- create_barplot(hdisease1, "diagnosis", c("#CD0000", "#00CD00"))
 
-# Plot bar charts for categorical variables
-categorical_vars_long %>%
-  ggplot(aes(x = value)) +
-  geom_bar(fill = "blue", color = "black", alpha = 0.7) +
-  facet_wrap(~ variable, scales = "free_x") +
-  theme_minimal() +
-  labs(title = "Bar Charts of Categorical Variables", x = "Category", y = "Count")
-
-categorical_vars_long %>%
-  gather(key = "variable", value = "value") %>%
-  count(variable, value) %>%
-  arrange(variable, desc(n))
+# Combine all plots into a grid
+plot_grid(
+  plot_sex, plot_chest_pain, plot_fasting_blood_sugar, 
+  plot_resting_ec, plot_exercise_induced_angina, plot_slope,
+  plot_major_vessels, plot_thalassemia, plot_diagnosis,
+  ncol = 3, rel_heights = c(1,1,1)
+)
 ```
 
 
 ## Create visualizations in order to show which variables seem to be more associated with heart disease
 
 ```{r}
+numeric_vars_long <- numeric_vars %>%
+  mutate(diagnosis = as.factor(hdisease1$diagnosis)) %>%
+  pivot_longer(-diagnosis, names_to = "variable", values_to = "value")
 
+boxplot_numeric <- ggplot(numeric_vars_long, aes(x = diagnosis, y = value, fill = diagnosis)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoid crazy outliers squishing plots
+  facet_wrap(~ variable, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Numeric Variables by Heart Disease Diagnosis", x = "Diagnosis", y = "Value") +
+  scale_fill_manual(values = c("#CD0000", "#00CD00"))
+
+print(boxplot_numeric)
+```
+```{r , fig.width=10, fig.height=8}
+# Define the plotting function
+plot_categorical_barplot <- function(df, var) {
+  ggplot(df, aes_string(x = var, fill = "as.factor(diagnosis)")) +
+    geom_bar(position = "fill") +
+    labs(title = paste(var, "by Diagnosis"), x = var, y = "Proportion") +
+    scale_fill_manual(values = c("#CD0000", "#00CD00"), name = "Diagnosis") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+# Loop through categorical variables and create the plots
+cat_plots <- lapply(names(categorical_vars), function(cat_var) {
+  plot_categorical_barplot(hdisease1, cat_var)
+})
+
+# Use plot_grid to arrange all plots in a grid
+# You can adjust the number of columns (ncol) to suit your preferences
+combined_plot <- plot_grid(plotlist = cat_plots, ncol = 3, align = 'v')  # Adjust ncol for layout
+
+# Print the combined grid plot
+print(combined_plot)
+
+```
+### Correlations
+```{r}
+# Convert Diagnosis to numeric
+hdisease1_corr <- hdisease1 %>%
+  mutate(
+    diagnosis = ifelse(diagnosis == "negative diagnosis", 0, 1)
+  )
+numeric_vars_corr <- hdisease1_corr %>%
+  select(where(is.numeric))
+# Compute correlations
+cor_matrix <- cor(numeric_vars_corr, use = "complete.obs")
+cor_with_disease <- cor_matrix["diagnosis", , drop = FALSE]
+cor_with_disease <- cor_with_disease[order(abs(cor_with_disease[, 1]), decreasing = TRUE), , drop = FALSE]
+
+print("Correlation with Diagnosis:")
+print(cor_with_disease)
+
+```
+```{r}
+library(mlbench)
+library("GGally")
+
+ggpairs(hdisease1, aes(color = diagnosis, alpha = 0.5),
+        columns = 1:14,  # select columns you want (or remove this line to use all columns)
+
+        # Custom settings for each type of plot
+        upper = list(continuous = wrap("blank"),
+                     combo = wrap("blank"),
+                     discrete = wrap("blank")),
+
+        lower = list(continuous = wrap("points", alpha = 0.6), 
+                     combo = wrap("dot_no_facet"), 
+                     discrete = wrap("facetbar")),
+
+        diag = list(continuous = wrap("densityDiag"), 
+                    discrete = wrap("barDiag"))
+)
 ```
 
 
@@ -141,6 +313,7 @@ Using the supplementary material from the [Difference in mortality rates in hosp
 
 ## Reproduce Figure 1 from the publication
 
+### Data preparation
 ```{r}
 Table1 <- read_excel("~/Documents/Table1.xlsx", skip = 1)
 Table1$Group = NA
@@ -164,103 +337,141 @@ Table1 <- Table1 %>%
 ```
 
 
+### Figure 1A, Age Histogram
+```{r}
+
+fig1_a <- ggplot(Table1, aes(x = Age)) + 
+  geom_histogram(binwidth = 10, fill = "lightblue", color = "black") +
+  scale_y_continuous(limits = c(0, 50)) +
+  scale_x_continuous(breaks = seq(20, 100, by = 10), limits = c(20, 100)) +
+  labs(x = "Age (years)", y = "Frequency (n)", title = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+### Figure 1B, Definition of the Clinical Classifications
+```{r}
+first_column <- c("G1", "G2", "G3","G4")
+second_column <- c("-", "-/+", "+","-/+")
+third_column <- c("-", "+/-", "-","+")
+forth_column <- c("-", "-", "+","+")
+table1_classification <- data.frame(first_column, second_column, third_column, forth_column)
+names = c("Clinical\n Classification", "NIV", "AMV", "ARDS")
+colnames(table1_classification) <- names
+rownames(table1_classification) <- c(" ","  ","   ","    ")
+
+fig1_b <- grid.arrange(top="Definition of the Clinical Classification",tableGrob(table1_classification))
+
+```
+
+
+### FIgure 1C, Clinical Classification
+```{r}
+
+fig1_c <- ggplot(Table1, aes(x = Group, fill = Group)) +
+  geom_bar() +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(
+    title = "Clinical Classification",
+    x = "Clinical Classification",
+    y = "Frequency (n)"
+  ) +
+  ylim(0,70)
+```
+
+### Figure 1D, Bar Chart of Death
+```{r}
+fig1_d <- ggplot(Table1, aes(x = Death)) +
+  geom_bar(fill = "skyblue", color = "black") +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(
+    title = "Vital Status",
+    x = "Death",
+    y = "Frequency (n)"
+  ) +
+  ylim(0,150) +
+  theme_minimal() 
+```
+
+### Combined images
+```{r}
+# Convert ggplot objects to gtables and replace NULLs
+plot_list <- list(fig1_a, fig1_b, fig1_c, fig1_d)
+
+# Arrange plots in a 2-column layout
+grid.arrange(grobs = plot_list, ncol = 2, heights = c(1, 1))
+```
+
 ## Reproduce Figure 2 from the publication
 but instead of representing the clusters in the annotation, represent the groups (G1 to G4)
 
 ```{r}
-
 Table2 <- read_excel("~/Documents/Table2.xlsx", skip = 1)
-names(Table2)[1] <- "ID"
-Table2 <- Table2 %>%
-  fill(ID, .direction = "down")
-Table2_clean <- Table2 %>%
-  filter(across(3:14, ~ . != "NI"))
+#Cleaning Table 2:
+#Change the first column name of "Table 2" to "ID"
+colnames(Table2)[1] <- "ID"
+# Remove rows with NA in the ID column and extract unique records.
+Table2 <- Table2 %>%   
+  filter(!is.na(ID)) %>%
+  distinct(ID, .keep_all = TRUE) %>%
+  select(ID,`IL-6`,CXCL10,`IL-38`,`IL-8`,`IFN-ɑ`,`IL-10`,`TNF-ɑ`,CCL2,CCL3,`IFN-γ`,`IL-1β`,`G-CSF`)
 
-Table2_clean <- Table2_clean %>%
-  select(1, 3:14)
-Table2_clean[, 2:13] <- lapply(Table2_clean[, 2:13], as.numeric)
+# Define the columns to check as strings
+columns_to_check <- c("IL-6", "CXCL10", "IL-38", "IL-8", "IFN-ɑ", "IL-10", "TNF-ɑ", "CCL2", "CCL3", "IFN-γ", "IL-1β", "G-CSF")
 
-Table2_clean <- Table2_clean %>% 
-  group_by(ID) %>%
-    summarise(
-      across(1:12, ~ mean(.x, na.rm = TRUE))
-    )
-Table2_clean <- Table2_clean %>%
-  left_join(Table1 %>% select(ID, Group), by = "ID")
+# Delete rows with characters in specified columns
+unique_table2 <- Table2 %>%
+  filter(!if_any(all_of(columns_to_check), ~grepl("^[A-Za-z]+$", .)))
 
-Table2_clean <- Table2_clean %>%
-  filter(!is.na(Group))
+# Delete the rows with "NI" in specified columns
+unique_table2.2 <- unique_table2 %>%
+  filter(!if_any(columns_to_check, ~grepl("NI", .)))
 
-cytokine_data <- Table2_clean %>%
-  select(c("Group", "IL-1β", "IL-6", "IL-10", "IFN-ɑ", "TNF-ɑ", "IL-8", "G-CSF", "IFN-γ", 
-           "CCL3", "CXCL10", "CCL2", "IL-38"))
-cytokine_data <- na.omit(cytokine_data)
+# Select the needed columns and rename the labels to make them more easy to handle
+unique_table2.2 <- unique_table2.2 %>% 
+  select(ID,`IL-6`,CXCL10,`IL-38`,CCL3,`IFN-γ`,`IL-1β`,`IL-10`,`G-CSF`,`IFN-ɑ`
+         ,`TNF-ɑ`,`IL-8`,CCL2) %>% 
+  rename_all(~ gsub("-", "", .)) %>%
+  #Turn all non numeric values to NA
+  mutate(across(-ID,as.numeric))
 
-cytokine_data$Group <- as.factor(cytokine_data$Group)
+#Merge table 2 with classification from table 1 with ID.
+table2_1_merged <- unique_table2.2 %>% 
+  inner_join(Table1 %>% select(ID, Group), by = "ID")
 
+```
 
-# Prepare the matrix
-cytokine_matrix <- cytokine_data %>%
-  select(-Group) %>%
-  mutate(across(everything(), as.numeric)) %>%  # Ensure all columns are numeric
-  as.matrix()
-scale_to_percent <- function(x) {
-  (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE)) * 100
-}
-
-# Scale each cytokine (row) to percentage
-scaled_matrix <- t(apply(cytokine_matrix, 2, scale_to_percent))
-colnames(scaled_matrix) <- cytokine_data$Group
+```{r}
+#Define color pallette and assign a color to each group
+color <- brewer.pal(4, "Set1")
+classification_colors <- setNames(color, c("G1", "G2", "G3", "G4"))
+classifications <- table2_1_merged$Group
+classification_colside <- classification_colors[classifications]
 
 
-# Color mapping
-col_fun <- colorRamp2(c(0, 50, 100), c("#fcdfa4", "#FF7F50", "#8B0000"))
+#Plot using Heatmap
+par(mar = c(5, 4, 4, 8), xpd = TRUE)  
 
-# Group annotation colors
-column_ha <- HeatmapAnnotation(
-    Group = cytokine_data$Group,
-    col = list(Group = c(
-        "G1" = "#FF9999",  # Red
-        "G2" = "#90EE90",  # Green
-        "G3" = "#87CEEB",  # Blue
-        "G4" = "pink"      # Pink
-    ))
+# Generate heatmap
+heatmap_plot <- heatmap(
+  as.matrix(t(table2_1_merged[, 2:13])),
+  cexCol = 0.1,
+  xlab = "Patients",
+  col = brewer.pal(9, "Oranges"),
+  scale = "column",
+  ColSideColors = classification_colside
 )
 
-# Heatmap
-heatmap <- Heatmap(
-    scaled_matrix,
-    name = "Relative expression",
-    
-    # Color gradient
-    col = col_fun,
-    
-    # Clustering
-    cluster_rows = hclust(dist(scaled_matrix, method = "manhattan")),
-    cluster_columns = hclust(dist(t(scaled_matrix), method = "manhattan")),
-    
-    # Row and column settings
-    row_names_side = "right",
-    row_dend_side = "left",
-    column_title = "Patients",
-    column_title_side = "bottom",
-    top_annotation = column_ha,
-    
-    # Legend
-    heatmap_legend_param = list(
-        title = "Relative expression",
-        at = c(0, 50, 100),
-        labels = c("0.00", "50.0%", "100.0%"),
-        color_bar = "discrete"
-    ),
-    
-    # Style adjustments
-    row_names_gp = gpar(fontsize = 10, fontface = "bold"),  # Larger font for rows
-    show_column_names = FALSE  # Hide column names to reduce clutter
-)
+# Add the classification legend
+legend("topright", inset = c(-0.15, 0), legend = c("G1", "G2", "G3", "G4"), 
+       fill = classification_colors, bty = "n")
 
-# Draw the heatmap
-draw(heatmap, heatmap_legend_side = "left", padding = unit(c(2, 2, 2, 2), "mm"))
+# Add the color scale legend
+legend("bottomleft", legend = c("0.00", "50.0%", "100.0%"), 
+       fill = brewer.pal(9, "Oranges")[c(1,5,9)], title = "Relative\nExpression", 
+       bty = "n")
+
 ```
 
 
@@ -269,6 +480,56 @@ Add a second annotation with information of death and a third one with informati
 
 ```{r}
 
+#Clean table.
+unique_table1.3 <- Table1 %>%
+  filter(!is.na(ID)) %>%
+  distinct(ID, .keep_all = TRUE)
+  
+#Merge by ID only columns of gender and death from Table 1.
+table12_group_gender <- inner_join(
+  table2_1_merged,
+  unique_table1.3 %>% select(ID, Gender, Death),
+  by = "ID"
+)
+
+#Remove numeric character and right strip space character. 
+table12_group_gender <- table12_group_gender %>%
+  filter(!grepl("\\d", Gender))
+
+#Get numeric data for Heatmap.
+numeric_data <- table12_group_gender[, -c(1, 14, 15, 16)]
+
+#Annotations.
+gender_info <- table12_group_gender$Gender
+death_info <- table12_group_gender$Death
+classification_info <- table12_group_gender$Group
+gender_info <- replace(gender_info, gender_info =="F ", "F")
+
+ha <- HeatmapAnnotation(
+    Deaths = death_info , 
+    Gender = gender_info,
+    Groups = classification_info, 
+    col = list(Deaths = c("Yes" = "black", "No" = "gray"),
+               Groups = c("G1" = "red", "G2" = "green", "G3" = "blue", "G4" = "purple"),
+               Gender = c("M" = "royalblue", "F" = "pink")
+    )
+)
+
+Heatmap(
+  scale(as.matrix(t(numeric_data))),
+  name = "Relative\nexpression",
+  column_title = "Patients",
+  column_title_side = "bottom",
+  top_annotation = ha,
+  col = brewer.pal(9, "Oranges"),
+  
+  heatmap_legend_param = list(
+    title = "Relative\nexpression",
+    at = c(-2,1,4),  
+    labels = c("0", "50%", "100%")
+  )
+
+)
 ```
 
 
