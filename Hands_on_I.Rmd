@@ -37,9 +37,13 @@ Load the data from
 [here](https://raw.githubusercontent.com/jpinero/DMI_2021/main/datasets/heart_disease_dataset.csv), and the description is [here](https://raw.githubusercontent.com/jpinero/DMI_2021/main/datasets/heart_disease_description.txt). 
 The original dataset comes from [here](https://archive.ics.uci.edu/ml/datasets/Heart+Disease) and corresponds to the [processed cleveland data](https://archive.ics.uci.edu/ml/machine-learning-databases/heart-disease/processed.cleveland.data)
 
+Here we analyze the heart disease dataset to identify key factors associated with heart disease. We start by performing an exploratory data analysis (EDA) to understand the distribution of numerical and categorical variables, detect outliers, and examine correlations. We will then create visualizations to highlight potential associations between features and heart disease.
+
 ## Perform an EDA on the dataset
 
 ### Data preparation
+
+Before conducting our analysis, we clean and preprocess the dataset. This includes renaming columns for readability, converting categorical variables into meaningful labels, handling missing values, and removing outliers. One important decision we made was to categorize the disease diagnosis as positive vs negative to make it a binary categorical variable. In the original dataset there were several degrees of severity. 
 
 ```{r}
 # Reading in the Data
@@ -85,6 +89,9 @@ for (col in columns_to_filter) {
 ```
 
 ### Numerical variables
+
+To understand the distribution of numerical variables, we generate boxplots and density plots. This helps us identify potential outliers, assess whether the variables follow a normal distribution, and identify possible associations.
+
 #### Create boxplots
 ```{r}
 numeric_vars <- hdisease1 %>%
@@ -151,6 +158,9 @@ grid.arrange(qq_plot_Age, qq_plot_Cholesterol, qq_plot_MaxHeartRate,
              qq_plot_RestingBloodPressure, qq_plot_Peak, nrow = 2)
 ```
 #### Normality tests
+
+To determine if our numerical variables follow a normal distribution, we use the Shapiro-Wilk test. If the p-value is below 0.05, we reject the null hypothesis and conclude that the data is not normally distributed.
+
 ```{r}
 # alpha 0.05
 # Normality test for Age
@@ -176,6 +186,9 @@ cat("Shapiro-Wilk test for Peak:\n", "W =", shapiro_test_Peak$statistic, ", p-va
 They all follow a normal distribution (p<0.05)
 
 ### Categorical variables
+
+Next, we analyze categorical variables such as sex, chest pain type, and diagnosis. Understanding the distribution of these variables can provide insights into the characteristics of patients with heart disease.
+
 ```{r}
 # Select categorical variables
 categorical_vars <- hdisease1 %>%
@@ -230,6 +243,8 @@ plot_grid(
 
 ## Create visualizations in order to show which variables seem to be more associated with heart disease
 
+To explore which features are most associated with heart disease, we visualize numerical variables against the diagnosis. Boxplots and barplots allow us to compare distributions between patients with and without heart disease.
+
 ```{r}
 numeric_vars_long <- numeric_vars %>%
   mutate(diagnosis = as.factor(hdisease1$diagnosis)) %>%
@@ -269,6 +284,9 @@ print(combined_plot)
 
 ```
 ### Correlations
+
+To quantify relationships between numerical features and heart disease, we compute correlation coefficients. Strong correlations may indicate potential predictors for heart disease diagnosis.
+
 ```{r}
 # Convert Diagnosis to numeric
 hdisease1_corr <- hdisease1 %>%
@@ -286,6 +304,8 @@ print("Correlation with Diagnosis:")
 print(cor_with_disease)
 
 ```
+
+
 ```{r}
 library(mlbench)
 library("GGally")
@@ -307,6 +327,9 @@ ggpairs(hdisease1, aes(color = diagnosis, alpha = 0.5),
 )
 ```
 
+From the EDA we can observe associations between some of these variables and heart disease diagnosis. In general, males in this data set have a higher proportion of positive diagnoses. Those with exercise induced angina also tend to have higher proportions of positive diagnoses. Presence of thalassemia also appears to be associated with higher rates of positive diagnosis in this data set. In order to see if these variables could be used as predictors for likelihood of getting diagnosed with heart disease, further statistical tests would need to be performed.
+
+
 
 # 2 Difference in mortality rates in hospitalized COVID-19 patients 
 Using the supplementary material from the [Difference in mortality rates in hospitalized COVID-19 patients identified by cytokine profile clustering using a machine learning approach: An outcome prediction alternative](https://www.frontiersin.org/articles/10.3389/fmed.2022.987182/full), perform the following tasks
@@ -315,7 +338,7 @@ Using the supplementary material from the [Difference in mortality rates in hosp
 
 ### Data preparation
 ```{r}
-Table1 <- read_excel("~/Documents/Table1.xlsx", skip = 1)
+Table1 <- read_excel("~/Desktop/DMI/assignment-1-lmcbride053/data/Table1.XLSX", skip = 1)
 Table1$Group = NA
 Table1 <- Table1 %>%
   mutate(Group = case_when(
@@ -407,7 +430,7 @@ grid.arrange(grobs = plot_list, ncol = 2, heights = c(1, 1))
 but instead of representing the clusters in the annotation, represent the groups (G1 to G4)
 
 ```{r}
-Table2 <- read_excel("~/Documents/Table2.xlsx", skip = 1)
+Table2 <- read_excel("~/Desktop/DMI/assignment-1-lmcbride053/data/Table2.XLSX", skip = 1)
 #Cleaning Table 2:
 #Change the first column name of "Table 2" to "ID"
 colnames(Table2)[1] <- "ID"
